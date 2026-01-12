@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LUT Timer</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React and Babel for running JSX in browser -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        .animate-in { animation: fadeIn 0.5s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        html, body { overscroll-behavior-y: none; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const Icon = ({ name, className }) => {
+            const icons = {
+                play: '<polygon points="5 3 19 12 5 21 5 3"></polygon>',
+                pause: '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>',
+                rotate: '<path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>',
+                back: '<polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line>',
+                forward: '<polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line>',
+                settings: '<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>',
+                plus: '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>',
+                trash: '<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>',
+                x: '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
+                save: '<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline>',
+                check: '<polyline points="20 6 9 17 4 12"></polyline>'
+            };
+            return (
+                <svg viewBox="0 0 24 24" width="24" height="24" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" className={className} dangerouslySetInnerHTML={{ __html: icons[name] }} />
+            );
+        };
+
+        const DEFAULT_EXERCISES = [
+            { id: 1, name: 'Forearm plank', duration: 50, reps: 4, rest: 40 },
+            { id: 2, name: 'Long rest', duration: 0, reps: 1, rest: 20 },
+            { id: 3, name: 'Bridge', duration: 50, reps: 4, rest: 40 },
+            { id: 4, name: 'Side plank', duration: 30, reps: 6, rest: 30 },
+        ];
+
+        function App() {
+            const [exercises, setExercises] = useState(DEFAULT_EXERCISES);
+            const [isSaving, setIsSaving] = useState(false);
+            const [settings, setSettings] = useState({ 
+                workCountdown: true, 
+                restCountdown: false, 
+                wakeLockEnabled: true, 
+                voiceSynth: true, 
+                haptics: true,
+                showSettings: false 
+            });
+
+            const [currentIndex, setCurrentIndex] = useState(0); 
+            const [timeLeft, setTimeLeft] = useState(0);
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [isFinished, setIsFinished] = useState(false);
+            
+            const wakeLock = useRef(null);
+            const audioCtx = useRef(null);
+            const backgroundNoise = useRef(null);
+            const hiddenAudio = useRef(null);
+
+            // Audio setup for max focus
+            const initAudio = () => {
+                if (audioCtx.current) return;
+                
+                // 1. Create Web Audio Context
+                audioCtx.current = new (window.AudioContext || window.webkitAudioContext)();
+                
+                // 2. Create nearly silent white noise to keep the audio pipe "open"
+                const bufferSize = 2 * audioCtx.current.sampleRate;
+                const noiseBuffer = audioCtx.current.createBuffer(1, bufferSize, audioCtx.current.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = Math.random() * 0.0001 - 0.00005;
+                }
+                
+                backgroundNoise.current = audioCtx.current.createBufferSource();
+                backgroundNoise.current.buffer = noiseBuffer;
+                backgroundNoise.current.loop = true;
+                const gain = audioCtx.current.createGain();
+                gain.gain.value = 0.001; 
+                backgroundNoise.current.connect(gain);
+                gain.connect(audioCtx.current.destination);
+                backgroundNoise.current.start();
+
+                // 3. Dual-Channel Attack: Add a hidden HTML5 audio element
+                // Many mobile OS respect ducking more reliably from HTML5 <audio> than WebAudio
+                if (!hiddenAudio.current) {
+                    const silentAudio = "data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==";
+                    hiddenAudio.current = new Audio(silentAudio);
+                    hiddenAudio.current.loop = true;
+                }
+            };
+
+            const updateMediaSession = (state) => {
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = state;
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: 'Workout Timer',
+                        artist: 'Focus Active',
+                        album: 'Training'
+                    });
+                }
+            };
+
+            const requestWakeLock = async () => {
+                if (!('wakeLock' in navigator) || !settings.wakeLockEnabled) return;
+                try { wakeLock.current = await navigator.wakeLock.request('screen'); } catch (err) {}
+            };
+
+            useEffect(() => {
+                if (isPlaying) {
+                    requestWakeLock();
+                    updateMediaSession('playing');
+                    if (hiddenAudio.current) hiddenAudio.current.play().catch(() => {});
+                } else {
+                    if (wakeLock.current) wakeLock.current.release();
+                    updateMediaSession('paused');
+                    if (hiddenAudio.current) hiddenAudio.current.pause();
+                }
+            }, [isPlaying]);
+
+            const queue = (() => {
+                const q = [];
+                exercises.forEach((ex, exIdx) => {
+                    for (let r = 1; r <= ex.reps; r++) {
+                        if (ex.duration > 0) q.push({ type: 'work', name: ex.name, duration: ex.duration, rep: r, totalReps: ex.reps });
+                        if (!(exIdx === exercises.length - 1 && r === ex.reps) && ex.rest > 0) {
+                            q.push({ type: 'rest', name: ex.duration === 0 ? ex.name : 'Rest', duration: ex.rest, isLongPause: ex.duration === 0, rep: r, totalReps: ex.reps });
+                        }
+                    }
+                });
+                return q;
+            })();
+
+            const currentStep = queue[currentIndex] || { name: 'Done', duration: 0, type: 'finished' };
+
+            useEffect(() => {
+                if (timeLeft === 0 && !isFinished) setTimeLeft(queue[currentIndex]?.duration || 0);
+            }, [currentIndex, exercises]);
+
+            useEffect(() => {
+                let interval = null;
+                if (isPlaying && !isFinished && timeLeft > 0) {
+                    interval = setInterval(() => {
+                        setTimeLeft((prev) => {
+                            const next = prev - 1;
+                            if (next <= 3 && next > 0) {
+                                if (currentStep.type === 'work' && settings.workCountdown) playBeep(440, 0.2, 'square');
+                                if (currentStep.type === 'rest' && settings.restCountdown) playBeep(330, 0.2, 'square');
+                            }
+                            if (next === 0) handleStepEnd();
+                            return next;
+                        });
+                    }, 1000);
+                }
+                return () => clearInterval(interval);
+            }, [isPlaying, timeLeft, isFinished, settings]);
+
+            const playBeep = (freq, dur, type = 'sine') => {
+                if (!audioCtx.current) initAudio();
+                if (audioCtx.current.state === 'suspended') audioCtx.current.resume();
+
+                try {
+                    const now = audioCtx.current.currentTime;
+                    
+                    // The "System Kick" - Force Ducking
+                    // A quick frequency sweep (40Hz to 100Hz) is very effective at 
+                    // convincing the OS that a "Notification" or "Alert" is happening.
+                    const kicker = audioCtx.current.createOscillator();
+                    const kickGain = audioCtx.current.createGain();
+                    kicker.frequency.setValueAtTime(40, now);
+                    kicker.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+                    kickGain.gain.setValueAtTime(0.6, now);
+                    kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+                    kicker.connect(kickGain);
+                    kickGain.connect(audioCtx.current.destination);
+                    kicker.start(now);
+                    kicker.stop(now + 0.15);
+
+                    // The actual UI Beep
+                    const osc = audioCtx.current.createOscillator();
+                    const gainNode = audioCtx.current.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, now);
+                    gainNode.gain.setValueAtTime(0.8, now);
+                    gainNode.gain.exponentialRampToValueAtTime(0.001, now + dur);
+                    osc.connect(gainNode);
+                    gainNode.connect(audioCtx.current.destination);
+                    osc.start(now);
+                    osc.stop(now + dur);
+
+                    if (settings.haptics && navigator.vibrate) navigator.vibrate(50);
+                } catch (e) {}
+            };
+
+            const speak = (text) => {
+                if (!window.speechSynthesis || !settings.voiceSynth) return;
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'en-US';
+                utterance.volume = 1.0; 
+                window.speechSynthesis.speak(utterance);
+            };
+
+            const handleStepEnd = () => {
+                if (currentIndex < queue.length - 1) {
+                    const nextIdx = currentIndex + 1;
+                    const nextStep = queue[nextIdx];
+                    setCurrentIndex(nextIdx);
+                    setTimeLeft(nextStep.duration);
+                    if (nextStep.type === 'work' || nextStep.isLongPause) {
+                        playBeep(880, 0.4, 'square');
+                        if (nextStep.isLongPause || nextStep.rep === 1) speak(nextStep.name);
+                    } else {
+                        playBeep(523, 0.2, 'square');
+                        setTimeout(() => playBeep(659, 0.2, 'square'), 100);
+                    }
+                } else {
+                    setIsPlaying(false);
+                    setIsFinished(true);
+                    playBeep(880, 1.0, 'square');
+                    speak("Workout completed");
+                }
+            };
+
+            const togglePlay = () => {
+                if (isFinished) { resetTimer(); setIsPlaying(true); return; }
+                initAudio();
+                if (audioCtx.current && audioCtx.current.state === 'suspended') audioCtx.current.resume();
+                if (!isPlaying && currentIndex === 0 && timeLeft === queue[0].duration) {
+                    playBeep(880, 0.4, 'square');
+                    speak(queue[0].name);
+                }
+                setIsPlaying(!isPlaying);
+            };
+
+            const handleSave = () => { setIsSaving(true); resetTimer(); setTimeout(() => setIsSaving(false), 1500); };
+            const resetTimer = () => { setIsPlaying(false); setIsFinished(false); setCurrentIndex(0); if (queue.length > 0) setTimeLeft(queue[0].duration); };
+            const formatTime = (s) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+
+            return (
+                <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col items-center p-4 md:p-6 pb-20 font-sans">
+                    <header className="w-full max-w-4xl flex justify-between items-center py-4 mb-2">
+                        <div className="flex items-baseline gap-1">
+                            <span className="text-3xl font-black italic tracking-tighter text-emerald-500">LUT</span>
+                            <span className="text-sm font-bold tracking-[0.3em] opacity-40 uppercase">Timer</span>
+                        </div>
+                        <button onClick={() => setSettings(s => ({...s, showSettings: !s.showSettings}))} className={`p-3 rounded-2xl border transition-all ${settings.showSettings ? 'bg-amber-500 border-amber-400 text-white' : 'bg-slate-800 border-slate-700 text-slate-400'}`}>
+                            <Icon name="settings" className="w-5 h-5" />
+                        </button>
+                    </header>
+
+                    {settings.showSettings && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/70 backdrop-blur-sm">
+                            <div className="bg-slate-800 w-full max-w-md rounded-3xl p-8 border border-slate-700 shadow-2xl relative animate-in">
+                                <button onClick={() => setSettings(s => ({...s, showSettings: false}))} className="absolute top-6 right-6 text-slate-500 hover:text-white"><Icon name="x"/></button>
+                                <h2 className="text-xl font-black mb-6 uppercase tracking-tight">Audio & Focus</h2>
+                                <div className="space-y-4">
+                                    {[
+                                        { id: 'workCountdown', label: 'Work Beeps', desc: 'Triggers system audio priority' },
+                                        { id: 'voiceSynth', label: 'Voice Coach', desc: 'Maximizes background ducking' },
+                                        { id: 'haptics', label: 'Vibration', desc: 'Alert feel for set changes' },
+                                        { id: 'wakeLockEnabled', label: 'Stay Awake', desc: 'Prevent screen dimming' },
+                                    ].map(opt => (
+                                        <div key={opt.id} className="flex items-center justify-between p-4 bg-slate-900/50 rounded-2xl border border-slate-700">
+                                            <div>
+                                                <div className="font-bold text-sm">{opt.label}</div>
+                                                <div className="text-xs text-slate-500">{opt.desc}</div>
+                                            </div>
+                                            <button onClick={() => setSettings(s => ({...s, [opt.id]: !s[opt.id]}))} className={`w-12 h-6 rounded-full transition-all relative ${settings[opt.id] ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                                                <div className={`w-4 h-4 bg-white rounded-full absolute top-1 transition-all ${settings[opt.id] ? 'left-7' : 'left-1'}`} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button onClick={() => setSettings(s => ({...s, showSettings: false}))} className="w-full mt-6 bg-slate-700 py-3 rounded-xl font-bold">CLOSE</button>
+                            </div>
+                        </div>
+                    )}
+
+                    <section className="w-full max-w-xl flex flex-col items-center mb-10">
+                        <div className="text-amber-500 text-xl md:text-3xl font-black tracking-widest mb-6 uppercase text-center h-10 flex items-center justify-center">
+                            {isFinished ? "Finished!" : (currentStep.isLongPause ? currentStep.name : `${currentStep.name} • Rep ${currentStep.rep}/${currentStep.totalReps}`)}
+                        </div>
+                        <div className="relative mb-10">
+                            <svg width="280" height="280" className="transform -rotate-90 md:w-[300px] md:h-[300px]">
+                                <circle cx="140" cy="140" r="120" stroke="#1e293b" strokeWidth="12" fill="transparent" />
+                                <circle cx="140" cy="140" r="120" stroke={currentStep.type === 'rest' ? "#3b82f6" : "#10b981"} strokeWidth="12" fill="transparent" strokeDasharray={754} strokeDashoffset={754 - ((currentStep.duration ? timeLeft / currentStep.duration : 0) * 754)} strokeLinecap="round" className="transition-all duration-1000 ease-linear" />
+                            </svg>
+                            <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                <span className="text-7xl md:text-8xl font-black tabular-nums tracking-tighter mb-1">{formatTime(timeLeft)}</span>
+                                <span className={`text-lg md:text-xl font-bold tracking-[0.2em] ${!isPlaying && !isFinished ? 'text-yellow-500' : (currentStep.type === 'rest' ? 'text-blue-400' : 'text-emerald-400')}`}>
+                                    {isFinished ? "DONE" : (!isPlaying ? "PAUSED" : "RUNNING")}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-6 mb-8">
+                            <button onClick={() => { if (currentIndex > 0) { setCurrentIndex(currentIndex - 1); setTimeLeft(queue[currentIndex-1].duration); setIsFinished(false); }}} className="p-4 rounded-full bg-slate-800 hover:bg-slate-700 transition-colors"><Icon name="back" className="w-6 h-6 text-slate-400" /></button>
+                            <button onClick={togglePlay} className={`p-8 md:p-10 rounded-full shadow-2xl transition-all ${isPlaying ? 'bg-amber-500' : 'bg-emerald-600'}`}>
+                                {isPlaying ? <Icon name="pause" className="w-10 h-10 text-white" /> : <Icon name="play" className="w-10 h-10 text-white ml-1" />}
+                            </button>
+                            <button onClick={() => { if (currentIndex < queue.length - 1) { setCurrentIndex(currentIndex + 1); setTimeLeft(queue[currentIndex + 1].duration); setIsFinished(false); } else { setIsFinished(true); setIsPlaying(false); }}} className="p-4 rounded-full bg-slate-800 hover:bg-slate-700 transition-colors"><Icon name="forward" className="w-6 h-6 text-slate-400" /></button>
+                        </div>
+                        <button onClick={resetTimer} className="text-slate-500 hover:text-slate-300 flex items-center gap-2 text-xs font-bold tracking-widest uppercase transition-colors">
+                            <Icon name="rotate" className="w-4 h-4" /> Reset Timer
+                        </button>
+                    </section>
+
+                    <section className="w-full max-w-4xl bg-slate-800/40 border border-slate-700/50 rounded-3xl p-4 md:p-8 shadow-xl">
+                        <h3 className="font-black italic tracking-tight text-xl mb-6 text-slate-400 uppercase">Exercise List</h3>
+                        <div className="overflow-x-auto mb-8">
+                            <table className="w-full text-left min-w-[500px]">
+                                <thead>
+                                    <tr className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em] border-b border-slate-700">
+                                        <th className="pb-4 pl-2">Name</th>
+                                        <th className="pb-4 text-center">Reps</th>
+                                        <th className="pb-4 text-center">Work (s)</th>
+                                        <th className="pb-4 text-center">Pause (s)</th>
+                                        <th className="pb-4 text-right pr-2">Del</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-700/30">
+                                    {exercises.map((ex, idx) => (
+                                        <tr key={ex.id}>
+                                            <td className="py-4 pr-4">
+                                                <input className="bg-transparent border-b border-transparent focus:border-emerald-500 outline-none w-full font-bold text-slate-100 text-lg" value={ex.name} onChange={e => { const n = [...exercises]; n[idx].name = e.target.value; setExercises(n); }} />
+                                            </td>
+                                            <td className="py-4 text-center">
+                                                <input type="number" className="bg-slate-900/40 w-16 p-2 rounded-lg text-center outline-none" value={ex.reps} onChange={e => { const n = [...exercises]; n[idx].reps = parseInt(e.target.value) || 1; setExercises(n); }} />
+                                            </td>
+                                            <td className="py-4 text-center">
+                                                <input type="number" className="bg-slate-900/40 w-16 p-2 rounded-lg text-center outline-none" value={ex.duration} onChange={e => { const n = [...exercises]; n[idx].duration = parseInt(e.target.value) || 0; setExercises(n); }} />
+                                            </td>
+                                            <td className="py-4 text-center">
+                                                <input type="number" className="bg-slate-900/40 w-16 p-2 rounded-lg text-center outline-none" value={ex.rest} onChange={e => { const n = [...exercises]; n[idx].rest = parseInt(e.target.value) || 0; setExercises(n); }} />
+                                            </td>
+                                            <td className="py-4 text-right">
+                                                <button onClick={() => setExercises(exercises.filter(it => it.id !== ex.id))} className="text-rose-500/70 p-2"><Icon name="trash" className="w-5 h-5"/></button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="flex gap-4">
+                            <button onClick={() => setExercises([...exercises, {id: Date.now(), name: 'Exercise', duration: 30, reps: 1, rest: 10}])} className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 py-3 px-6 rounded-xl font-bold flex-1">ADD</button>
+                            <button onClick={handleSave} className="bg-slate-700 text-slate-300 py-3 px-6 rounded-xl font-bold flex-1">{isSaving ? "SAVED" : "SAVE"}</button>
+                        </div>
+                    </section>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
